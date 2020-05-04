@@ -57,7 +57,7 @@ font = Monospace 10
 bold_is_bright = true
 font = Monospace 10
 
-# # Included from: /home/user/.config/termite/colors
+### Included from: /home/user/.config/termite/colors
 [colors]
 # If unset, will reverse foreground and background
 highlight = #2f2f2f
@@ -66,7 +66,7 @@ highlight = #2f2f2f
 color0 = #3f3f3f
 color1 = #705050
 ...
-# #
+###
 ...
 ```
 

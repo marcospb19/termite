@@ -1487,9 +1487,9 @@ std::string prepare_custom_config(std::string path) {
 
         if (line.find("include ") == 0) {
             text += '\n';
-            text += "# # Included from: " + prefix + line.substr(offset, line.size() - offset) + "\n";
+            text += "### Included from: " + prefix + line.substr(offset, line.size() - offset) + "\n";
             text += return_include_file_content(prefix + line.substr(offset, line.size() - offset));
-            text += "# #\n";
+            text += "###\n";
             text += '\n';
         }
         else {
