@@ -29,6 +29,10 @@
 #include <set>
 #include <string>
 
+// My patch extra
+#include <fstream>
+//
+
 #include <gtk/gtk.h>
 #include <vte/vte.h>
 
@@ -160,8 +164,12 @@ static void search(VteTerminal *vte, const char *pattern, bool reverse);
 static void overlay_show(search_panel_info *info, overlay_mode mode, VteTerminal *vte);
 static void get_vte_padding(VteTerminal *vte, int *left, int *top, int *right, int *bottom);
 static char *check_match(VteTerminal *vte, GdkEventButton *event);
+
+//
 static void load_config(GtkWindow *window, VteTerminal *vte, GtkWidget *scrollbar, GtkWidget *hbox,
-                        config_info *info, char **icon, bool *show_scrollbar);
+                        config_info *info, char **icon, bool *show_scrollbar, char* custom_config_file_path);
+//
+
 static void set_config(GtkWindow *window, VteTerminal *vte, GtkWidget *scrollbar, GtkWidget *hbox,
                        config_info *info, char **icon, bool *show_scrollbar,
                        GKeyFile *config);
@@ -1435,19 +1443,101 @@ static void load_theme(GtkWindow *window, VteTerminal *vte, GKeyFile *config, hi
     hints.roundness = get_config_double(config, "hints", "roundness").get_value_or(1.5);
 }
 
+
+//
+//
+std::string return_include_file_content(std::string path) {
+    std::string str;
+    std::ifstream stream(path);
+    
+    if (not stream.is_open()) {
+        fprintf(stderr, "Could not open \"%s\" file for include\n", path.c_str());
+        exit(1);
+    }
+
+    while (stream.peek() != EOF) {
+        str += char(stream.get());
+    }
+
+    if (str.size() and str.back() != '\n')
+        str += '\n';
+
+    return str;
+}
+
+std::string prepare_custom_config(std::string path) {
+    std::ifstream input_file(path);
+
+    if (not input_file.is_open())
+    {
+        fprintf(stderr, "Could not open \"%s\" file for config input\n", path.c_str());
+        exit(1);
+    }
+
+    std::string text;
+    std::string line;
+    int offset = std::string("include ").size();
+
+    std::string prefix = path;
+    while (prefix.size() and prefix.back() != '/') {
+        prefix.pop_back();
+    }
+
+    while (std::getline(input_file, line)) {
+
+        if (line.find("include ") == 0) {
+            text += '\n';
+            text += "# # Included from: " + prefix + line.substr(offset, line.size() - offset) + "\n";
+            text += return_include_file_content(prefix + line.substr(offset, line.size() - offset));
+            text += "# #\n";
+            text += '\n';
+        }
+        else {
+            text += line + '\n';
+        }
+    }
+
+    std::string final_path = prefix += "config";
+    std::ofstream output_file(final_path);
+
+    if (not output_file.is_open())
+    {
+        fprintf(stderr, "Could not open \"%s\" file for config output\n", final_path.c_str());
+        exit(1);
+    }
+
+    output_file << text;
+
+    return final_path;
+}
+//
+//
+
 static void load_config(GtkWindow *window, VteTerminal *vte, GtkWidget *scrollbar,
                         GtkWidget *hbox, config_info *info, char **icon,
-                        bool *show_scrollbar) {
+                        bool *show_scrollbar, char* custom_config_file_path) {
     const std::string default_path = "/termite/config";
     GKeyFile *config = g_key_file_new();
     GError *error = nullptr;
 
     gboolean loaded = FALSE;
 
-    if (info->config_file) {
-        loaded = g_key_file_load_from_file(config,
-                                           info->config_file,
-                                           G_KEY_FILE_NONE, &error);
+    if (info->config_file or custom_config_file_path) {
+        
+        if (custom_config_file_path) {
+
+            std::string custom_path = prepare_custom_config(std::string(custom_config_file_path));
+
+            loaded = g_key_file_load_from_file(
+                    config, custom_path.c_str(),
+                    G_KEY_FILE_NONE, &error);
+        }
+        else {
+            loaded = g_key_file_load_from_file(config,
+                                               info->config_file,
+                                               G_KEY_FILE_NONE, &error);
+        }
+
         if (!loaded)
             g_printerr("%s parsing failed: %s\n", info->config_file,
                        error->message);
@@ -1645,6 +1735,9 @@ int main(int argc, char **argv) {
     GOptionContext *context = g_option_context_new(nullptr);
     char *role = nullptr, *execute = nullptr, *config_file = nullptr;
     char *title = nullptr, *icon = nullptr;
+
+    char* custom_config_file_path = nullptr; //
+
     bool show_scrollbar = false;
     const GOptionEntry entries[] = {
         {"version", 'v', 0, G_OPTION_ARG_NONE, &version, "Version info", nullptr},
@@ -1654,6 +1747,7 @@ int main(int argc, char **argv) {
         {"directory", 'd', 0, G_OPTION_ARG_STRING, &directory, "Change to directory", "DIRECTORY"},
         {"hold", 0, 0, G_OPTION_ARG_NONE, &hold, "Remain open after child process exits", nullptr},
         {"config", 'c', 0, G_OPTION_ARG_STRING, &config_file, "Path of config file", "CONFIG"},
+        {"custom-config", 'C', 0, G_OPTION_ARG_STRING, &custom_config_file_path, "Path of custom config file", "CUSTOM_CONFIG"},
         {"icon", 'i', 0, G_OPTION_ARG_STRING, &icon, "Icon", "ICON"},
         {nullptr, 0, 0, G_OPTION_ARG_NONE, nullptr, nullptr, nullptr}
     };
@@ -1731,11 +1825,11 @@ int main(int argc, char **argv) {
     };
 
     load_config(GTK_WINDOW(window), vte, scrollbar, hbox, &info.config,
-                icon ? nullptr : &icon, &show_scrollbar);
+                icon ? nullptr : &icon, &show_scrollbar, custom_config_file_path);
 
     reload_config = [&]{
         load_config(GTK_WINDOW(window), vte, scrollbar, hbox, &info.config,
-                    nullptr, nullptr);
+                    nullptr, nullptr, custom_config_file_path);
     };
     signal(SIGUSR1, [](int){ reload_config(); });
 
