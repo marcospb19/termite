@@ -1453,7 +1453,7 @@ std::string return_include_file_content(std::string path) {
     
     if (not stream.is_open()) {
         fprintf(stderr, "Could not open \"%s\" file for include\n", path.c_str());
-        exit(1);
+        return "## Could not open \"%s\" file for this include \n";
     }
 
     while (stream.peek() != EOF) {
@@ -1472,7 +1472,7 @@ std::string prepare_custom_config(std::string path, gboolean vim_mark) {
     if (not input_file.is_open())
     {
         fprintf(stderr, "Could not open \"%s\" file for config input\n", path.c_str());
-        exit(1);
+        return "/dev/null";
     }
 
     std::string text;
@@ -1487,11 +1487,9 @@ std::string prepare_custom_config(std::string path, gboolean vim_mark) {
     while (std::getline(input_file, line)) {
 
         if (line.find("include ") == 0) {
-            text += '\n';
             text += "### Included from: " + prefix + line.substr(offset, line.size() - offset) + "\n";
             text += return_include_file_content(prefix + line.substr(offset, line.size() - offset));
             text += "###\n";
-            text += '\n';
         }
         else if (line.find("# vim: ft=dosini cms=#%s") == 0) {
             continue;
@@ -1542,7 +1540,10 @@ static void load_config(GtkWindow *window, VteTerminal *vte, GtkWidget *scrollba
                     config, custom_path.c_str(),
                     G_KEY_FILE_NONE, &error);
         }
-        else {
+        if (!loaded) {
+            g_printerr("%s parsing failed: %s\n", info->config_file,
+                       error->message);
+
             loaded = g_key_file_load_from_file(config,
                                                info->config_file,
                                                G_KEY_FILE_NONE, &error);
